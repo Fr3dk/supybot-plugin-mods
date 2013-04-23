@@ -210,7 +210,7 @@ class Seen(callbacks.Plugin):
                     (when, said) = info
                     L.append(format('%s (%s ago)', nick,
                                     utils.timeElapsed(time.time()-when)))
-                irc.reply(format('%s could be %L', name, (L, 'or')))
+                irc.reply(format('%s could be %L', name, (L, 'or')))
             else:
                 irc.reply(format('I haven\'t seen anyone matching %s.', name))
         except KeyError:
