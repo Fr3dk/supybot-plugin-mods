@@ -59,6 +59,9 @@ def check_identify(user, capability):
 def identify(capability):
     def wrap(f):
         def wrapped_f(*args, **kwargs):
+            """
+            Testing docstring.
+            """
             if check_identify(args[2].nick, capability):
                 return f(*args, **kwargs)
             return args[1].error(conf.supybot.replies.incorrectAuthentication(), Raise=True) 
