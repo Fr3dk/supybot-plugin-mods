@@ -33,16 +33,10 @@ import sys
 import time
 import socket
 
-import supybot.utils as utils
-import supybot.registry as registry
-import supybot.ircutils as ircutils
-from supybot.i18n import PluginInternationalization
+from . import ircutils, registry, utils
+from .version import version
+from .i18n import PluginInternationalization
 _ = PluginInternationalization()
-
-###
-# version: This should be pretty obvious.
-###
-from supybot.version import version
 
 ###
 # *** The following variables are affected by command-line options.  They are
@@ -239,7 +233,7 @@ class Servers(registry.SpaceSeparatedListOfStrings):
 
     def convert(self, s):
         s = self.normalize(s)
-        (server, port) = s.rsplit(':', 2)
+        (server, port) = s.rsplit(':', 1)
         port = int(port)
         return (server, port)
 
@@ -261,7 +255,7 @@ class SocksProxy(registry.String):
         if ':' not in v:
             self.error()
         try:
-            int(v.rsplit(':', 2)[1])
+            int(v.rsplit(':', 1)[1])
         except ValueError:
             self.error()
         super(SocksProxy, self).setValue(v)
@@ -277,6 +271,23 @@ class SpaceSeparatedSetOfChannels(registry.SpaceSeparatedListOf):
             return ircmsgs.join(channel, key)
         else:
             return ircmsgs.join(channel)
+    def joins(self):
+        from . import ircmsgs # Don't put this globally!  It's recursive.
+        channels = []
+        channels_with_key = []
+        keys = []
+        for channel in self():
+            key = self.key.get(channel)()
+            if key:
+                keys.append(key)
+                channels_with_key.append(channel)
+            else:
+                channels.append(channel)
+        if channels_with_key or channels:
+            return ircmsgs.joins(channels_with_key + channels, keys)
+        else:
+            # Let's be explicit about it
+            return None
 
 def registerNetwork(name, password='', ssl=False, sasl_username='',
         sasl_password=''):
@@ -286,12 +297,12 @@ def registerNetwork(name, password='', ssl=False, sasl_username='',
         technically passwords are server-specific and not network-specific,
         but this is the best we can do right now.""") % name, private=True))
     registryServers = registerGlobalValue(network, 'servers', Servers([],
-        _("""Determines what servers the bot will connect to for %s.  Each will
-        be tried in order, wrapping back to the first when the cycle is
-        completed.""") % name))
+        _("""Space-separated list of servers the bot will connect to for %s.
+        Each will be tried in order, wrapping back to the first when the cycle
+        is completed.""") % name))
     registerGlobalValue(network, 'channels', SpaceSeparatedSetOfChannels([],
-        _("""Determines what channels the bot will join only on %s.""") %
-        name, private=True))
+        _("""Space-separated list of channels the bot will join only on %s.""")
+        % name, private=True))
     registerGlobalValue(network, 'ssl', registry.Boolean(ssl,
         _("""Determines whether the bot will attempt to connect with SSL
         sockets to %s.""") % name))
@@ -439,7 +450,7 @@ registerGlobalValue(supybot.reply, 'withNoticeWhenPrivate',
 
 registerChannelValue(supybot.reply, 'withNickPrefix',
     registry.Boolean(True, _("""Determines whether the bot will always prefix
-     theuser's nick to its reply to that user's command.""")))
+     the user's nick to its reply to that user's command.""")))
 
 registerChannelValue(supybot.reply, 'whenNotAddressed',
     registry.Boolean(False, _("""Determines whether the bot should attempt to
@@ -677,6 +688,9 @@ registerGlobalValue(supybot.commands.defaultPlugins, 'importantPlugins',
 ###
 registerGroup(supybot, 'abuse')
 registerGroup(supybot.abuse, 'flood')
+registerGlobalValue(supybot.abuse.flood, 'interval',
+    registry.PositiveInteger(60, _("""Determines the interval used for
+    the history storage.""")))
 registerGlobalValue(supybot.abuse.flood, 'command',
     registry.Boolean(True, _("""Determines whether the bot will defend itself
     against command-flooding.""")))
@@ -789,6 +803,9 @@ registerGlobalValue(supybot.directories, 'backup',
 registerGlobalValue(supybot.directories.data, 'tmp',
     DataFilenameDirectory('tmp', _("""Determines what directory temporary files
     are put into.""")))
+registerGlobalValue(supybot.directories.data, 'web',
+    DataFilenameDirectory('web', _("""Determines what directory files of the
+    web server (templates, custom images, ...) are put into.""")))
 
 utils.file.AtomicFile.default.tmpDir = supybot.directories.data.tmp
 utils.file.AtomicFile.default.backupDir = supybot.directories.backup
@@ -824,8 +841,8 @@ class Databases(registry.SpaceSeparatedListOfStrings):
                 v.insert(0, 'sqlite')
             if 'sqlite3' in sys.modules:
                 v.insert(0, 'sqlite3')
-            if 'pysqlite2' in sys.modules: # for python 2.4
-                v.insert(0, 'sqlite3')
+            if 'sqlalchemy' in sys.modules:
+                v.insert(0, 'sqlalchemy')
         return v
 
     def serialize(self):
@@ -917,7 +934,7 @@ registerChannelValue(supybot.databases.plugins.channelSpecific.link, 'allow',
 
 class CDB(registry.Boolean):
     def connect(self, filename):
-        import supybot.cdb as cdb
+        from . import cdb
         basename = os.path.basename(filename)
         journalName = supybot.directories.data.tmp.dirize(basename+'.journal')
         return cdb.open_db(filename, 'c',
@@ -985,7 +1002,7 @@ class Banmask(registry.SpaceSeparatedSetOfStrings):
                 self.error()
         self.__parent.setValue(self.List(v))
 
-    def makeBanmask(self, hostmask, options=None):
+    def makeBanmask(self, hostmask, options=None, channel=None):
         """Create a banmask from the given hostmask.  If a style of banmask
         isn't specified via options, the value of
         conf.supybot.protocols.irc.banmask is used.
@@ -993,7 +1010,8 @@ class Banmask(registry.SpaceSeparatedSetOfStrings):
         options - A list specifying which parts of the hostmask should
         explicitly be matched: nick, user, host.  If 'exact' is given, then
         only the exact hostmask will be used."""
-        channel = dynamic.channel
+        if not channel:
+            channel = dynamic.channel
         assert channel is None or ircutils.isChannel(channel)
         (nick, user, host) = ircutils.splitHostmask(hostmask)
         bnick = '*'
@@ -1113,9 +1131,6 @@ registerGlobalValue(supybot.servers.http, 'keepAlive',
     registry.Boolean(False, _("""Determines whether the server will stay
     alive if no plugin is using it. This also means that the server will
     start even if it is not used.""")))
-registerGlobalValue(supybot.servers.http, 'robots',
-    registry.String('', _("""Determines the content of the robots.txt file,
-    served on the server to search engine.""")))
 registerGlobalValue(supybot.servers.http, 'favicon',
     registry.String('', _("""Determines the path of the file served as
     favicon to browsers.""")))
