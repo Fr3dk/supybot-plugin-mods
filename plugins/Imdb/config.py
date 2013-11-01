@@ -30,13 +30,15 @@
 
 import supybot.conf as conf
 import supybot.registry as registry
+
+from .api import choices
+
 try:
     from supybot.i18n import PluginInternationalization
     _ = PluginInternationalization('Imdb')
-except:
-    # Placeholder that allows to run the plugin on a bot
-    # without the i18n module
+except ImportError:
     _ = lambda x:x
+
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
@@ -48,9 +50,14 @@ def configure(advanced):
 
 
 Imdb = conf.registerPlugin('Imdb')
-# This is where your configuration variables (if any) should go.  For example:
-# conf.registerGlobalValue(Imdb, 'someConfigVariableName',
-#     registry.Boolean(False, _("""Help for someConfigVariableName.""")))
 
+conf.registerGlobalValue(
+    Imdb, 'resultSeparator',
+    registry.StringSurroundedBySpaces(' :: ', _('String that separates the result fields.'))
+)
+conf.registerGlobalValue(
+    Imdb, 'apiName',
+    registry.String('omdb', _('Api to use. Choices are: ') + ', '.join(choices.keys()))
+)
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
