@@ -29,8 +29,6 @@
 ###
 
 import re
-import json
-import requests
 
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
@@ -38,115 +36,19 @@ import supybot.callbacks as callbacks
 try:
     from supybot.i18n import PluginInternationalization
     _ = PluginInternationalization('Imdb')
-except:
+except ImportError:
     _ = lambda x:x
 
-IMDB_REGEX = re.compile('http:\/\/www\.imdb\.com\/title\/tt(\d+)\/?')
-SEPARATOR = u' :: '
+from .api import choices
+
+URL_REGEX = re.compile('http:\/\/www\.imdb\.com\/title\/tt(\d+)\/?')
 
 
-class ImdbApi(object):
-    url = None
-    fields = None
-    errors = {
-        'connection': _('Error connecting to API.'),
-        'response': _('Error loading API response.'),
-    }
-
-    def load_response(self, req):
-        raise NotImplementedError
-
-    def fetch(self, mid):
-        response = requests.get(self.url.format(mid=mid))
-        try:
-            response.raise_for_status()
-        except (requests.HTTPError, requests.ConnectionError):
-            return self.errors['connection']
-        return self.load_response(response)
-
-    def format_field(self, value, title):
-        if isinstance(value, list):
-            value = u', '.join(value)
-        return u'\x02{0}:\x02 {1}'.format(title, value)
-
-    def format_result(self, result):
-        return SEPARATOR.join(self.format_field(result[key], title)
-                              for title, key in self.fields if key in result)
-
-    def reply(self, irc, mid):
-        result = self.fetch(mid)
-        if isinstance(result, dict):
-            irc.reply(self.format_result(result))
-        else:
-            irc.reply(result)
-
-
-class OmdbApi(ImdbApi):
-    url = 'http://www.omdbapi.com/?i=tt{mid}'
-    fields = (
-        (u'Title', u'Title',),
-        (u'Year', u'Year',),
-        (u'Rated', u'Rated',),
-        (u'Released', u'Released',),
-        (u'Genre', u'Genre',),
-        (u'Runtime', u'Runtime',),
-        (u'Director', u'Director',),
-        (u'Rating', u'imdbRating',),
-        (u'Votes', u'imdbVotes',),
-    )
-
-    def load_response(self, response):
-        try:
-            response = json.loads(response.text)
-        except ValueError:
-            return self.errors['response']
-        if response.get('Response') == 'False':
-            return response['Error']
-        return response
-
-
-class DeanClatworthyApi(ImdbApi):
-    url = 'http://deanclatworthy.com/imdb/?id=tt{mid}'
-    fields = (
-        (u'Title', u'title',),
-        (u'Year', u'year',),
-        (u'Genre', u'genres',),
-        (u'Country', u'country',),
-        (u'Runtime', u'runtime',),
-        (u'Rating', u'rating',),
-        (u'Votes', u'votes',),
-    )
-
-    def load_response(self, response):
-        try:
-            response = json.loads(response.text)
-        except ValueError:
-            return self.errors['response']
-        if 'code' in response:
-            return response['error']
-        return response
-
-
-class MyMovieApi(ImdbApi):
-    url = 'http://mymovieapi.com/?id=tt{mid}&type=json&plot=none&episode=0'
-    fields = (
-        (u'Title', u'title',),
-        (u'Year', u'year',),
-        (u'Genre', u'genres',),
-        (u'Country', u'country',),
-        (u'Runtime', u'runtime',),
-        (u'Rating', u'rating',),
-        (u'Votes', u'rating_count',),
-    )
-
-    def load_response(self, response):
-        try:
-            response = json.loads(response.text)
-        except ValueError:
-            return self.errors['response']
-        if 'code' in response:
-            return response['error']
-        return response
+def create_api(plugin):
+    api = plugin.registryValue('apiName')
+    if not api in choices:
+        raise ValueError('Invalid api provided!')
+    return choices[api](plugin=plugin)
 
 
 class Imdb(callbacks.Plugin):
@@ -156,15 +58,18 @@ class Imdb(callbacks.Plugin):
         if ircmsgs.isCtcp(msg) and not ircmsgs.isAction(msg):
             return
         channel = msg.args[0]
+
         if irc.isChannel(channel):
             if ircmsgs.isAction(msg):
                 text = ircmsgs.unAction(msg)
             else:
                 text = msg.args[1]
-            mids = set(IMDB_REGEX.findall(text))
-            if mids:
-                api = MyMovieApi()
-                for mid in mids:
+
+            movies = set(URL_REGEX.findall(text))
+
+            if movies:
+                api = create_api(plugin=self)
+                for mid in movies:
                     api.reply(irc, mid)
 
 Class = Imdb
