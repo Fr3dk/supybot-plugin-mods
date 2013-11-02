@@ -44,9 +44,14 @@ __contributors__ = {}
 
 __url__ = 'https://github.com/iyx/supybot-plugin-mods'
 
-import plugin
 import config
+import api
+import plugin
+
+reload(config)
+reload(api)
 reload(plugin)
+
 
 if world.testing:
     import test
