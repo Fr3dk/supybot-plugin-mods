@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2008-2010, James Vega
+# Copyright (c) 2008-2010, James McCoy
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,11 +28,13 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
-import new
 import time
+import types
 import socket
-import sgmllib
 import threading
+import re
+import sys
+import feedparser
 
 import supybot.conf as conf
 import supybot.utils as utils
@@ -41,14 +43,12 @@ from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 import supybot.callbacks as callbacks
-import re
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('RSS')
 
-try:
-    feedparser = utils.python.universalImport('feedparser', 'local.feedparser')
-except ImportError:
-    raise callbacks.Error, \
-            'You the feedparser module installed to use this plugin.  ' \
-            'Download the module at <http://feedparser.org/>.'
+
+MASO_REGEX = re.compile(r'roumenovomaso.cz/masoShow.php')
+
 
 def getFeedName(irc, msg, args, state):
     if not registry.isValidRegistryName(args[0]):
@@ -57,15 +57,13 @@ def getFeedName(irc, msg, args, state):
     state.args.append(callbacks.canonicalName(args.pop(0)))
 addConverter('feedName', getFeedName)
 
+
 def hackMaso(headlines):
-    reg_maso = re.compile(r'roumenovomaso.cz')
-    for k, v in enumerate(headlines):
-        v = ircutils.stripFormatting(v)
-        if re.search(reg_maso, v):
-            if ' - ' in v:
-                img, url = v.split(' - ')
-                headlines[k] = '%s - 14%s&agree=on14' % (img, url)
+    for title, url in enumerate(headlines):
+        if MASO_REGEX.search(url):
+            headlines[title] = '{0}&agree=on'.format(url)
     return headlines
+
 
 class RSS(callbacks.Plugin):
     """This plugin is useful both for announcing updates to RSS feeds in a
@@ -81,6 +79,7 @@ class RSS(callbacks.Plugin):
         self.locks = {}
         self.lastRequest = {}
         self.cachedFeeds = {}
+        self.cachedHeadlines = {}
         self.gettingLockLock = threading.Lock()
         for name in self.registryValue('feeds'):
             self._registerFeed(name)
@@ -148,19 +147,36 @@ class RSS(callbacks.Plugin):
                     self.releaseLock(url)
                     time.sleep(0.1) # So other threads can run.
 
-    def buildHeadlines(self, headlines, channel, config='announce.showLinks'):
+    def buildHeadlines(self, headlines, channel, linksconfig='announce.showLinks', dateconfig='announce.showPubDate'):
         newheadlines = []
-        if self.registryValue(config, channel):
-            for headline in headlines:
+        for headline in headlines:
+            link = ''
+            pubDate = ''
+            if self.registryValue(linksconfig, channel):
                 if headline[1]:
-                    newheadlines.append(format('%s - 14%u14',
-                                               headline[0],
-                                               headline[1].encode('utf-8')))
+                    if self.registryValue('stripRedirect'):
+                        link = re.sub('^.*http://', 'http://', headline[1])
+                    else:
+                        link = headline[1]
+            if self.registryValue(dateconfig, channel):
+                if headline[2]:
+                    pubDate = ' [%s]' % (headline[2],)
+            if sys.version_info[0] < 3:
+                if isinstance(headline[0], unicode):
+                    newheadlines.append(format('%s %s%s',
+                                                headline[0],
+                                                link,
+                                                pubDate))
                 else:
-                    newheadlines.append(format('%s', headline[0]))
-        else:
-            for headline in headlines:
-                newheadlines = [format('%s', h[0]) for h in headlines]
+                    newheadlines.append(format('%s %s%s',
+                                                headline[0].decode('utf-8','replace'),
+                                                link,
+                                                pubDate))
+            else:
+                newheadlines.append(format('%s %u%s',
+                                            headline[0],
+                                            link,
+                                            pubDate))
         return newheadlines
 
     def _newHeadlines(self, irc, channels, name, url):
@@ -172,9 +188,12 @@ class RSS(callbacks.Plugin):
             # Note that we're allowed to acquire this lock twice within the
             # same thread because it's an RLock and not just a normal Lock.
             self.acquireLock(url)
+            t = time.time()
             try:
-                oldresults = self.cachedFeeds[url]
-                oldheadlines = self.getHeadlines(oldresults)
+                #oldresults = self.cachedFeeds[url]
+                #oldheadlines = self.getHeadlines(oldresults)
+                oldheadlines = self.cachedHeadlines[url]
+                oldheadlines = filter(lambda x: t - x[3] < self.registryValue('announce.cachePeriod'), oldheadlines)
             except KeyError:
                 oldheadlines = []
             newresults = self.getFeed(url)
@@ -187,23 +206,51 @@ class RSS(callbacks.Plugin):
                     return
             def normalize(headline):
                 return (tuple(headline[0].lower().split()), headline[1])
-            oldheadlines = set(map(normalize, oldheadlines))
+            oldheadlinesset = set(map(normalize, oldheadlines))
             for (i, headline) in enumerate(newheadlines):
-                if normalize(headline) in oldheadlines:
+                if normalize(headline) in oldheadlinesset:
                     newheadlines[i] = None
             newheadlines = filter(None, newheadlines) # Removes Nones.
+            number_of_headlines = len(oldheadlines)
+            oldheadlines.extend(newheadlines)
+            self.cachedHeadlines[url] = oldheadlines
             if newheadlines:
+                def filter_whitelist(headline):
+                    v = False
+                    for kw in whitelist:
+                        if kw in headline[0] or kw in headline[1]:
+                            v = True
+                            break
+                    return v
+                def filter_blacklist(headline):
+                    v = True
+                    for kw in blacklist:
+                        if kw in headline[0] or kw in headline[1]:
+                            v = False
+                            break
+                    return v
                 for channel in channels:
-                    if len(oldheadlines) == 0:
-                        newheadlines = newheadlines[:self.registryValue('initialAnnounceHeadlines', channel)]
+                    if  number_of_headlines == 0:
+                        channelnewheadlines = newheadlines[:self.registryValue('initialAnnounceHeadlines', channel)]
+                    else:
+                        channelnewheadlines = newheadlines[:]
+                    whitelist = self.registryValue('keywordWhitelist', channel)
+                    blacklist = self.registryValue('keywordBlacklist', channel)
+                    if len(whitelist) != 0:
+                        channelnewheadlines = filter(filter_whitelist, channelnewheadlines)
+                    if len(blacklist) != 0:
+                        channelnewheadlines = filter(filter_blacklist, channelnewheadlines)
+                    if len(channelnewheadlines) == 0:
+                        return
                     bold = self.registryValue('bold', channel)
                     sep = self.registryValue('headlineSeparator', channel)
                     prefix = self.registryValue('announcementPrefix', channel)
-                    pre = format('', prefix, name)
+                    suffix = self.registryValue('announcementSeparator', channel)
+                    pre = format('%s%s%s', prefix, name, suffix)
                     if bold:
                         pre = ircutils.bold(pre)
                         sep = ircutils.bold(sep)
-                    headlines = self.buildHeadlines(newheadlines, channel)
+                    headlines = self.buildHeadlines(channelnewheadlines, channel)
                     headlines = hackMaso(headlines)
                     irc.replies(headlines, prefixer=pre, joiner=sep,
                                 to=channel, prefixNick=False, private=True)
@@ -242,12 +289,13 @@ class RSS(callbacks.Plugin):
             # and DoS the website in question.
             self.acquireLock(url)
             if self.willGetNewFeed(url):
+                results = {}
                 try:
                     self.log.debug('Downloading new feed from %u', url)
                     results = feedparser.parse(url)
-                    if 'bozo_exception' in results:
+                    if 'bozo_exception' in results and not results['entries']:
                         raise results['bozo_exception']
-                except sgmllib.SGMLParseError:
+                except feedparser.sgmllib.SGMLParseError:
                     self.log.exception('Uncaught exception from feedparser:')
                     raise callbacks.Error, 'Invalid (unparsable) RSS feed.'
                 except socket.timeout:
@@ -256,7 +304,7 @@ class RSS(callbacks.Plugin):
                     # These seem mostly harmless.  We'll need reports of a
                     # kind that isn't.
                     self.log.debug('Allowing bozo_exception %r through.', e)
-                if results.get('feed', {}):
+                if results.get('feed', {}) and self.getHeadlines(results):
                     self.cachedFeeds[url] = results
                     self.lastRequest[url] = time.time()
                 else:
@@ -276,24 +324,47 @@ class RSS(callbacks.Plugin):
     def _getConverter(self, feed):
         toText = utils.web.htmlToText
         if 'encoding' in feed:
-            return lambda s: toText(s).strip().encode(feed['encoding'],
-                                                      'replace')
+            def conv(s):
+                # encode() first so there implicit encoding doesn't happen in
+                # other functions when unicode and bytestring objects are used
+                # together
+                s = s.encode('utf-8')
+                #s = s.encode(feed['encoding'], 'replace')
+                s = toText(s).strip()
+                return s
+            return conv
         else:
             return lambda s: toText(s).strip()
+    def _sortFeedItems(self, items):
+        """Return feed items, sorted according to sortFeedItems."""
+        order = self.registryValue('sortFeedItems')
+        if order not in ['oldestFirst', 'newestFirst']:
+            return items
+        if order == 'oldestFirst':
+            reverse = False
+        if order == 'newestFirst':
+            reverse = True
+        try:
+            sitems = sorted(items, key=lambda i: i['updated'], reverse=reverse)
+        except KeyError:
+            # feedparser normalizes required timestamp fields in ATOM and RSS
+            # to the "updated" field. Feeds missing it are unsortable by date.
+            return items
+        return sitems
 
     def getHeadlines(self, feed):
         headlines = []
+        t = time.time()
         conv = self._getConverter(feed)
-        for d in feed['items']:
+        for d in self._sortFeedItems(feed['items']):
             if 'title' in d:
                 title = conv(d['title'])
                 link = d.get('link')
-                if link:
-                    headlines.append((title, link))
-                else:
-                    headlines.append((title, None))
+                pubDate = d.get('pubDate', d.get('updated'))
+                headlines.append((title, link, pubDate, t))
         return headlines
 
+    @internationalizeDocstring
     def makeFeedCommand(self, name, url):
         docstring = format("""[<number of headlines>]
 
@@ -312,10 +383,11 @@ class RSS(callbacks.Plugin):
             args.insert(0, url)
             self.rss(irc, msg, args)
         f = utils.python.changeFunctionName(f, name, docstring)
-        f = new.instancemethod(f, self, RSS)
+        f = types.MethodType(f, self)
         self.feedNames[name] = (url, f)
         self._registerFeed(name, url)
 
+    @internationalizeDocstring
     def add(self, irc, msg, args, name, url):
         """<name> <url>
 
@@ -326,6 +398,7 @@ class RSS(callbacks.Plugin):
         irc.replySuccess()
     add = wrap(add, ['feedName', 'url'])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, name):
         """<name>
 
@@ -333,7 +406,7 @@ class RSS(callbacks.Plugin):
         this plugin.
         """
         if name not in self.feedNames:
-            irc.error('That\'s not a valid RSS feed command name.')
+            irc.error(_('That\'s not a valid RSS feed command name.'))
             return
         del self.feedNames[name]
         conf.supybot.plugins.RSS.feeds().remove(name)
@@ -342,6 +415,7 @@ class RSS(callbacks.Plugin):
     remove = wrap(remove, ['feedName'])
 
     class announce(callbacks.Commands):
+        @internationalizeDocstring
         def list(self, irc, msg, args, channel):
             """[<channel>]
 
@@ -350,9 +424,10 @@ class RSS(callbacks.Plugin):
             """
             announce = conf.supybot.plugins.RSS.announce
             feeds = format('%L', list(announce.get(channel)()))
-            irc.reply(feeds or 'I am currently not announcing any feeds.')
+            irc.reply(feeds or _('I am currently not announcing any feeds.'))
         list = wrap(list, ['channel',])
 
+        @internationalizeDocstring
         def add(self, irc, msg, args, channel, feeds):
             """[<channel>] <name|url> [<name|url> ...]
 
@@ -370,6 +445,7 @@ class RSS(callbacks.Plugin):
         add = wrap(add, [('checkChannelCapability', 'op'),
                          many(first('url', 'feedName'))])
 
+        @internationalizeDocstring
         def remove(self, irc, msg, args, channel, feeds):
             """[<channel>] <name|url> [<name|url> ...]
 
@@ -387,15 +463,7 @@ class RSS(callbacks.Plugin):
         remove = wrap(remove, [('checkChannelCapability', 'op'),
                                many(first('url', 'feedName'))])
 
-    def hackMaso(self, headlines):
-        reg_maso = re.compile(r'roumenovomaso.cz')
-        for k, v in enumerate(headlines):
-            v = ircutils.stripFormatting(v)
-            if re.search(reg_maso, v):
-                img, url = v.split(' - ')
-                headlines[k] = '%s - 14%s&agree=on14' % (img, url)
-        return headlines
-
+    @internationalizeDocstring
     def rss(self, irc, msg, args, url, n):
         """<url> [<number of headlines>]
 
@@ -410,9 +478,10 @@ class RSS(callbacks.Plugin):
             channel = None
         headlines = self.getHeadlines(feed)
         if not headlines:
-            irc.error('Couldn\'t get RSS feed.')
+            irc.error(_('Couldn\'t get RSS feed.'))
             return
-        headlines = self.buildHeadlines(headlines, channel, 'showLinks')
+        headlines = self.buildHeadlines(headlines, channel, 'showLinks', 'showPubDate')
+        headlines = hackMaso(headlines)
         if n:
             headlines = headlines[:n]
         else:
@@ -420,10 +489,10 @@ class RSS(callbacks.Plugin):
         sep = self.registryValue('headlineSeparator', channel)
         if self.registryValue('bold', channel):
             sep = ircutils.bold(sep)
-        headlines = hackMaso(headlines)
         irc.replies(headlines, joiner=sep)
     rss = wrap(rss, ['url', additional('int')])
 
+    @internationalizeDocstring
     def info(self, irc, msg, args, url):
         """<url|feed>
 
@@ -438,7 +507,7 @@ class RSS(callbacks.Plugin):
         conv = self._getConverter(feed)
         info = feed.get('feed')
         if not info:
-            irc.error('I couldn\'t retrieve that RSS feed.')
+            irc.error(_('I couldn\'t retrieve that RSS feed.'))
             return
         # check the 'modified_parsed' key, if it's there, convert it here first
         if 'modified' in info:
@@ -451,12 +520,12 @@ class RSS(callbacks.Plugin):
         desc = conv(info.get('description', 'unavailable'))
         link = conv(info.get('link', 'unavailable'))
         # The rest of the entries are all available in the channel key
-        response = format('Title: %s;  URL: %u;  '
-                          'Description: %s;  Last updated: %s.',
+        response = format(_('Title: %s;  URL: %u;  '
+                          'Description: %s;  Last updated: %s.'),
                           title, link, desc, when)
         irc.reply(utils.str.normalizeWhitespace(response))
     info = wrap(info, [first('url', 'feedName')])
-
+RSS = internationalizeDocstring(RSS)
 
 Class = RSS
 
