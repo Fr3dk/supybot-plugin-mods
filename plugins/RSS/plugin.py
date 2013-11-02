@@ -177,7 +177,7 @@ class RSS(callbacks.Plugin):
                                             headline[0],
                                             link,
                                             pubDate))
-        return newheadlines
+        return hackMaso(newheadlines)
 
     def _newHeadlines(self, irc, channels, name, url):
         try:
@@ -251,7 +251,7 @@ class RSS(callbacks.Plugin):
                         pre = ircutils.bold(pre)
                         sep = ircutils.bold(sep)
                     headlines = self.buildHeadlines(channelnewheadlines, channel)
-                    headlines = hackMaso(headlines)
+                    
                     irc.replies(headlines, prefixer=pre, joiner=sep,
                                 to=channel, prefixNick=False, private=True)
         finally:
@@ -481,7 +481,6 @@ class RSS(callbacks.Plugin):
             irc.error(_('Couldn\'t get RSS feed.'))
             return
         headlines = self.buildHeadlines(headlines, channel, 'showLinks', 'showPubDate')
-        headlines = hackMaso(headlines)
         if n:
             headlines = headlines[:n]
         else:
