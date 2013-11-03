@@ -519,8 +519,8 @@ class RSS(callbacks.Plugin):
         desc = conv(info.get('description', 'unavailable'))
         link = conv(info.get('link', 'unavailable'))
         # The rest of the entries are all available in the channel key
-        response = format(_('Title: %s;  URL: %u;  '
-                          'Description: %s;  Last updated: %s.'),
+        response = format(_('Title: %u;  URL: %u;  '
+                          'Description: %u;  Last updated: %u.'),
                           title, link, desc, when)
         irc.reply(utils.str.normalizeWhitespace(response))
     info = wrap(info, [first('url', 'feedName')])
