@@ -28,8 +28,11 @@
 
 ###
 
+import re
 import json
 import requests
+
+import supybot.ircutils
 
 try:
     from supybot.i18n import PluginInternationalization
@@ -61,10 +64,15 @@ class ImdbApi(object):
             return self.errors['connection']
         return self.load_response(response)
 
+    def clean_value(self, value):
+        return supybot.ircutils.safeArgument(value)
+
     def format_field(self, value, title):
         if isinstance(value, list):
-            value = u', '.join(value)
-        return u'\x02{0}:\x02 {1}'.format(title, value)
+            value = ', '.join(self.clean_value(v) for v in value)
+        else:
+            value = self.clean_value(value)
+        return '{0}: {1}'.format(supybot.ircutils.bold(title), value)
 
     def format_result(self, result):
         separator = self.plugin.registryValue('resultSeparator')
