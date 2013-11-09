@@ -42,8 +42,8 @@ except ImportError:
 from .api import YouTubeApi
 
 URL_REGEXES = (
-    re.compile(r'(http(?:s):\/\/)?(www\.)?youtube\.com\/watch\?v=(?P<yid>\w+)'),
-    re.compile(r'(http(?:s):\/\/)?youtu\.be\/(?P<yid>\w+)'),
+    re.compile(r'(http(?:s):\/\/)?(www\.)?youtube\.com\/watch\?v=(?P<yid>[0-9a-zA-Z_\-]+)'),
+    re.compile(r'(http(?:s):\/\/)?youtu\.be\/(?P<yid>[0-9a-zA-Z_\-]+)'),
 )
 
 
