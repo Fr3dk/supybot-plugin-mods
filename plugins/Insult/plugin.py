@@ -43,14 +43,15 @@ from .api import InsultApi
 class Insult(callbacks.Plugin):
     threaded = True
 
-    def insult(self, irc, msg, args):
-        """
-        Sends a random insult to the channel.
+    def insult(self, irc, msg, args, user):
+        """<user>
+
+        Sends a random insult to the <user>.
         """
         api = InsultApi()
-        api.reply(irc)
+        api.reply(irc, user)
 
-    insult = commands.wrap(insult)
+    insult = commands.wrap(insult, ['nickInChannel'])
 
 Class = Insult
 

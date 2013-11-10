@@ -73,10 +73,11 @@ class InsultApi(object):
     def format_result(self, result):
         return self.clean_value(result['message'])
 
-    def reply(self, irc):
+    def reply(self, irc, user):
         result = self.fetch()
+
         if isinstance(result, dict):
-            irc.reply(self.format_result(result))
+            irc.reply(self.format_result(result), to=user)
         else:
             irc.reply(result)
 
