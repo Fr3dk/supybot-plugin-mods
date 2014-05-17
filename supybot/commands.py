@@ -67,7 +67,7 @@ def thread(f):
             t.start()
         else:
             f(self, irc, msg, args, *L, **kwargs)
-    return utils.python.changeFunctionName(newf, f.func_name, f.__doc__)
+    return utils.python.changeFunctionName(newf, f.__name__, f.__doc__)
 
 class ProcessTimeoutError(Exception):
     """Gets raised when a process is killed due to timeout."""
@@ -121,7 +121,7 @@ def process(f, *args, **kwargs):
     p.join(timeout)
     if p.is_alive():
         p.terminate()
-        raise ProcessTimeoutError, "%s aborted due to timeout." % (p.name,)
+        raise ProcessTimeoutError("%s aborted due to timeout." % (p.name,))
     try:
         v = q.get(block=False)
     except Queue.Empty:
@@ -160,7 +160,7 @@ class UrlSnarfThread(world.SupyThread):
     def run(self):
         try:
             super(UrlSnarfThread, self).run()
-        except utils.web.Error, e:
+        except utils.web.Error as e:
             log.debug('Exception in urlSnarfer: %s', utils.exnToString(e))
 
 class SnarfQueue(ircutils.FloodQueue):
@@ -219,7 +219,7 @@ def urlSnarfer(f):
             L = list(L)
             t = UrlSnarfThread(target=doSnarf, url=url)
             t.start()
-    newf = utils.python.changeFunctionName(newf, f.func_name, f.__doc__)
+    newf = utils.python.changeFunctionName(newf, f.__name__, f.__doc__)
     return newf
 
 
@@ -243,7 +243,7 @@ def _int(s):
     try:
         return int(s, base)
     except ValueError:
-        if base == 10:
+        if base == 10 and '.' not in s:
             try:
                 return int(float(s))
             except OverflowError:
@@ -301,7 +301,7 @@ def getId(irc, msg, args, state, kind=None):
     try:
         args[0] = args[0].lstrip('#')
         getInt(irc, msg, args, state, type=type)
-    except Exception, e:
+    except Exception as e:
         args[0] = original
         raise
 
@@ -336,16 +336,14 @@ def getNetworkIrc(irc, msg, args, state, errorIfNoMatch=False):
         state.args.append(irc)
 
 def getHaveVoice(irc, msg, args, state, action=_('do that')):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isVoice(irc.nick):
         state.error(_('I need to be voiced to %s.') % action, Raise=True)
 
 def getHaveVoicePlus(irc, msg, args, state, action=_('do that')):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isVoicePlus(irc.nick):
@@ -354,16 +352,14 @@ def getHaveVoicePlus(irc, msg, args, state, action=_('do that')):
                 Raise=True)
 
 def getHaveHalfop(irc, msg, args, state, action=_('do that')):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isHalfop(irc.nick):
         state.error(_('I need to be halfopped to %s.') % action, Raise=True)
 
 def getHaveHalfopPlus(irc, msg, args, state, action=_('do that')):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isHalfopPlus(irc.nick):
@@ -372,8 +368,7 @@ def getHaveHalfopPlus(irc, msg, args, state, action=_('do that')):
                 Raise=True)
 
 def getHaveOp(irc, msg, args, state, action=_('do that')):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isOp(irc.nick):
@@ -400,8 +395,7 @@ def getHostmask(irc, msg, args, state):
 
 def getBanmask(irc, msg, args, state):
     getHostmask(irc, msg, args, state)
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     channel = state.channel
     banmaskstyle = conf.supybot.protocols.irc.banmask
     state.args[-1] = banmaskstyle.makeBanmask(state.args[-1])
@@ -477,6 +471,8 @@ def getSeenNick(irc, msg, args, state, errmsg=None):
         state.error(errmsg, Raise=True)
 
 def getChannel(irc, msg, args, state):
+    if state.channel:
+        return
     if args and irc.isChannel(args[0]):
         channel = args.pop(0)
     elif irc.isChannel(msg.args[0]):
@@ -508,8 +504,7 @@ def getChannelDb(irc, msg, args, state, **kwargs):
             state.args.append(channel)
 
 def inChannel(irc, msg, args, state):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
         state.error(_('I\'m not in %s.') % state.channel, Raise=True)
 
@@ -564,8 +559,7 @@ def getChannelOrGlobal(irc, msg, args, state):
     state.args.append(channel)
 
 def checkChannelCapability(irc, msg, args, state, cap):
-    if not state.channel:
-        getChannel(irc, msg, args, state)
+    getChannel(irc, msg, args, state)
     cap = ircdb.canonicalCapability(cap)
     cap = ircdb.makeChannelCapability(state.channel, cap)
     if not ircdb.checkCapability(msg.prefix, cap):
@@ -798,8 +792,8 @@ class UnknownConverter(KeyError):
 def getConverter(name):
     try:
         return wrappers[name]
-    except KeyError, e:
-        raise UnknownConverter, str(e)
+    except KeyError as e:
+        raise UnknownConverter(str(e))
 
 def callConverter(name, irc, msg, args, state, *L):
     getConverter(name)(irc, msg, args, state, *L)
@@ -852,7 +846,7 @@ class rest(context):
             args[:] = [' '.join(args)]
             try:
                 super(rest, self).__call__(irc, msg, args, state)
-            except Exception, e:
+            except Exception as e:
                 args[:] = original
         else:
             raise IndexError
@@ -878,7 +872,7 @@ class optional(additional):
     def __call__(self, irc, msg, args, state):
         try:
             super(optional, self).__call__(irc, msg, args, state)
-        except (callbacks.ArgumentError, callbacks.Error), e:
+        except (callbacks.ArgumentError, callbacks.Error) as e:
             log.debug('Got %s, returning default.', utils.exnToString(e))
             state.errored = False
             setDefault(state, self.default)
@@ -896,7 +890,7 @@ class any(context):
                 self.__parent.__call__(irc, msg, args, st)
         except IndexError:
             pass
-        except (callbacks.ArgumentError, callbacks.Error), e:
+        except (callbacks.ArgumentError, callbacks.Error) as e:
             if not self.continueOnError:
                 raise
             else:
@@ -917,7 +911,7 @@ class first(context):
             self.default = kw.pop('default')
             assert not kw, 'Bad kwargs for first.__init__'
         self.spec = specs # for __repr__
-        self.specs = map(contextify, specs)
+        self.specs = list(map(contextify, specs))
 
     def __call__(self, irc, msg, args, state):
         errored = False
@@ -925,7 +919,7 @@ class first(context):
             try:
                 spec(irc, msg, args, state)
                 return
-            except Exception, e:
+            except Exception as e:
                 e2 = e # 'e' is local.
                 errored = state.errored
                 state.errored = False
@@ -956,7 +950,7 @@ class commalist(context):
                     if part: # trailing commas
                         super(commalist, self).__call__(irc, msg, [part], st)
             state.args.append(st.args)
-        except Exception, e:
+        except Exception as e:
             args[:] = original
             raise
 
@@ -967,11 +961,18 @@ class getopts(context):
         self.spec = getopts # for repr
         self.getopts = {}
         self.getoptL = []
+        self.getoptLs = ''
         for (name, spec) in getopts.iteritems():
             if spec == '':
+                if len(name) == 1:
+                    self.getoptLs += name
+                    self.getopts[name] = None
                 self.getoptL.append(name)
                 self.getopts[name] = None
             else:
+                if len(name) == 1:
+                    self.getoptLs += name + ':'
+                    self.getopts[name] = contextify(spec)
                 self.getoptL.append(name + '=')
                 self.getopts[name] = contextify(spec)
         log.debug('getopts: %r', self.getopts)
@@ -979,10 +980,13 @@ class getopts(context):
 
     def __call__(self, irc, msg, args, state):
         log.debug('args before %r: %r', self, args)
-        (optlist, rest) = getopt.getopt(args, '', self.getoptL)
+        (optlist, rest) = getopt.getopt(args, self.getoptLs, self.getoptL)
         getopts = []
         for (opt, arg) in optlist:
-            opt = opt[2:] # Strip --
+            if opt.startswith('--'):
+                opt = opt[2:] # Strip --
+            else:
+                opt = opt[1:]
             log.debug('opt: %r, arg: %r', opt, arg)
             context = self.getopts[opt]
             if context is not None:
@@ -1014,7 +1018,7 @@ class State(object):
             self.errored = True
             return getattr(dynamic.irc, attr)
         else:
-            raise AttributeError, attr
+            raise AttributeError(attr)
 
     def essence(self):
         st = State(self.types)
@@ -1058,10 +1062,9 @@ class Spec(object):
         return state
 
 def _wrap(f, specList=[], name=None, checkDoc=True, **kw):
-    name = name or f.func_name
+    name = name or f.__name__
     assert (not checkDoc) or (hasattr(f, '__doc__') and f.__doc__), \
                 'Command %r has no docstring.' % name
-    f = internationalizeDocstring(f)
     spec = Spec(specList, **kw)
     def newf(self, irc, msg, args, **kwargs):
         state = spec(irc, msg, args, stateAttrs={'cb': self, 'log': self.log})
@@ -1074,13 +1077,14 @@ def _wrap(f, specList=[], name=None, checkDoc=True, **kw):
             except TypeError:
                 self.log.error('Spec: %s', specList)
                 self.log.error('Received args: %s', args)
-                code = f.func_code
+                code = f.__code__
                 funcArgs = inspect.getargs(code)[0][len(self.commandArgs):]
                 self.log.error('Extra args: %s', funcArgs)
                 self.log.debug('Make sure you did not wrap a wrapped '
                                'function ;)')
                 raise
-    return utils.python.changeFunctionName(newf, name, f.__doc__)
+    newf2 = utils.python.changeFunctionName(newf, name, f.__doc__)
+    return internationalizeDocstring(newf2)
 
 def wrap(f, *args, **kwargs):
     if callable(f):

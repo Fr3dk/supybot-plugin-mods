@@ -71,7 +71,7 @@ class ImdbApi(object):
             value = ', '.join(self.clean_value(v) for v in value)
         else:
             value = self.clean_value(value)
-        return '{0}: {1}'.format(supybot.ircutils.bold(title), value)
+        return '{0} {1}'.format(supybot.ircutils.bold(title), value)
 
     def format_result(self, result):
         separator = self.plugin.registryValue('resultSeparator')
@@ -90,7 +90,7 @@ class OmdbApi(ImdbApi):
     name = 'omdb'
     url = 'http://www.omdbapi.com/?i=tt{mid}'
     fields = (
-        ('Title', 'Title',),
+        ('[\x0305iMDB\x03]', 'Title',),
         ('Year', 'Year',),
         ('Rated', 'Rated',),
         ('Released', 'Released',),
@@ -115,13 +115,13 @@ class DeanClatworthyApi(ImdbApi):
     name = 'deanclatworthy'
     url = 'http://deanclatworthy.com/imdb/?id=tt{mid}'
     fields = (
-        ('Title', 'title',),
-        ('Year', 'year',),
-        ('Genre', 'genres',),
-        ('Country', 'country',),
-        ('Runtime', 'runtime',),
-        ('Rating', 'rating',),
-        ('Votes', 'votes',),
+        ('[\x0305iMDB\x03]', 'title',),
+        ('Year:', 'year',),
+        ('Genre:', 'genres',),
+        ('Country:', 'country',),
+        ('Language:', 'languages',),
+        ('Rating:', 'rating',),
+        ('Votes:', 'votes',),
     )
 
     def load_response(self, response):
@@ -138,13 +138,13 @@ class MyMovieApi(ImdbApi):
     name = 'mymovie'
     url = 'http://mymovieapi.com/?id=tt{mid}&type=json&plot=none&episode=0'
     fields = (
-        ('Title', 'title',),
-        ('Year', 'year',),
-        ('Genre', 'genres',),
-        ('Country', 'country',),
-        ('Runtime', 'runtime',),
-        ('Rating', 'rating',),
-        ('Votes', 'rating_count',),
+        ('[\x0305iMDB\x03]', 'title',),
+        ('Year:', 'year',),
+        ('Genre:', 'genres',),
+        ('Country:', 'country',),
+        ('Language:', 'language',),
+        ('Rating:', 'rating',),
+        ('Votes:', 'rating_count',),
     )
 
     def load_response(self, response):

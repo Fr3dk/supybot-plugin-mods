@@ -197,7 +197,7 @@ class Seen(callbacks.Plugin):
                 (nick, info) = results[0]
                 (when, said) = info
                 if not any:
-                  irc.reply(format('%s last uttered word in %s %s ago: %s',
+                  irc.reply(format('%s last uttered a word in %s %s ago: %s',
                                    nick, channel,
                                    utils.timeElapsed(time.time()-when), said))
                 else:

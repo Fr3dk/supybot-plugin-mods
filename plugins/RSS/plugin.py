@@ -163,17 +163,17 @@ class RSS(callbacks.Plugin):
                     pubDate = ' [%s]' % (headline[2],)
             if sys.version_info[0] < 3:
                 if isinstance(headline[0], unicode):
-                    newheadlines.append(format('%s %s%s',
+                    newheadlines.append(format('%s 14:: %s%s',
                                                 headline[0],
                                                 link,
                                                 pubDate))
                 else:
-                    newheadlines.append(format('%s %s%s',
+                    newheadlines.append(format('%s 14:: %s%s',
                                                 headline[0].decode('utf-8','replace'),
                                                 link,
                                                 pubDate))
             else:
-                newheadlines.append(format('%s %u%s',
+                newheadlines.append(format('%s 14:: %u%s',
                                             headline[0],
                                             link,
                                             pubDate))
@@ -246,7 +246,7 @@ class RSS(callbacks.Plugin):
                     sep = self.registryValue('headlineSeparator', channel)
                     prefix = self.registryValue('announcementPrefix', channel)
                     suffix = self.registryValue('announcementSeparator', channel)
-                    pre = format('%s%s%s', prefix, name, suffix)
+                    pre = format('%s[4%s%s] ', prefix, name, suffix)
                     if bold:
                         pre = ircutils.bold(pre)
                         sep = ircutils.bold(sep)

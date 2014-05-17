@@ -35,7 +35,7 @@ _ = PluginInternationalization('RSS')
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
-    # a bool that specifies whether the user identified himself as an advanced
+    # a bool that specifies whether the user identified themself as an advanced
     # user or not.  You should effect your configuration by manipulating the
     # registry as appropriate.
     from supybot.questions import expect, anything, something, yn
@@ -97,7 +97,7 @@ conf.registerGlobalValue(RSS, 'defaultNumberOfHeadlines',
     registry.PositiveInteger(1, _("""Indicates how many headlines an rss feed
     will output by default, if no number is provided.""")))
 conf.registerChannelValue(RSS, 'initialAnnounceHeadlines',
-    registry.PositiveInteger(5, _("""Indicates how many headlines an rss feed
+    registry.Integer(5, _("""Indicates how many headlines an rss feed
     will output when it is first added to announce for a channel.""")))
 conf.registerChannelValue(RSS, 'keywordWhitelist',
     registry.SpaceSeparatedSetOfStrings([], _("""Space separated list of 
