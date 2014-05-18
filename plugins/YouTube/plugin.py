@@ -43,7 +43,7 @@ from .api import YouTubeApi
 
 URL_REGEXES = (
     re.compile(r'(http(?:s):\/\/)?(www\.)?youtube\.com\/watch\?'
-               r'(feature=player_embedded&)?'
+               r'(feature=(player_embedded|y\.\.\.)&)?'
                r'v=(?P<yid>[0-9a-zA-Z_\-]+)'),
     re.compile(r'(http(?:s):\/\/)?youtu\.be\/(?P<yid>[0-9a-zA-Z_\-]+)'),
 )
